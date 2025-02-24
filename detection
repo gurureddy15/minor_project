@@ -1,0 +1,358 @@
+from google.colab import drive
+drive.mount('/content/drive')
+
+import torch
+import torchvision.models as models
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, random_split
+from torchvision.datasets import ImageFolder
+import torch.optim as optim
+import torch.nn as nn
+from torch.optim.lr_scheduler import StepLR
+
+# Load and preprocess the data
+transform = transforms.Compose([
+    transforms.Resize((227, 227)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+dataset = ImageFolder('/content/drive/MyDrive/dataset brain', transform=transform)
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+# from torchvision.models import alexnet, AlexNet_Weights
+
+# alexnet = alexnet(weights=AlexNet_Weights.DEFAULT)
+# Modify AlexNet
+alexnet = models.alexnet(pretrained=True)
+num_fruits = len(dataset.classes)
+alexnet.classifier[6] = nn.Linear(alexnet.classifier[6].in_features, num_fruits)
+
+# Define loss function and optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(alexnet.parameters(), lr=0.001, momentum=0.9)
+scheduler = StepLR(optimizer, step_size=7, gamma=0.1)
+
+# Device configuration
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+alexnet.to(device)
+
+# Train the model
+num_epochs = 10
+for epoch in range(num_epochs):
+    alexnet.train()
+    running_loss = 0.0
+    for i, data in enumerate(train_loader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = alexnet(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    scheduler.step()
+    print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}")
+
+    # Test the model
+    alexnet.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for data in test_loader:
+            images, labels = data
+            images, labels = images.to(device), labels.to(device)
+            outputs = alexnet(images)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    print(f'Accuracy of the network on the test images: {100 * correct / total} %')
+
+print('Finished Training')
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+import numpy as np
+
+# Function to compute predictions
+def get_all_preds(model, data_loader, device):
+    model.eval()
+    all_preds = []
+    all_labels = []
+    with torch.no_grad():
+        for images, labels in data_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            outputs = model(images)
+            _, preds = torch.max(outputs, 1)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+    return np.array(all_preds), np.array(all_labels)
+
+# Get predictions and labels
+preds, labels = get_all_preds(alexnet, test_loader, device)
+
+# Compute the confusion matrix
+cm = confusion_matrix(labels, preds)
+
+# Plotting the confusion matrix
+plt.figure(figsize=(10,10))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=dataset.classes, yticklabels=dataset.classes)
+plt.xlabel('Predicted')
+plt.ylabel('True')
+plt.title('Confusion Matrix')
+plt.show()
+
+
+# Modify VGG16
+vgg16 = models.vgg16(pretrained=True)
+num_classes = len(dataset.classes)
+
+# Replace the last layer
+vgg16.classifier[6] = nn.Linear(vgg16.classifier[6].in_features, num_classes)
+
+# Define loss function and optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(vgg16.parameters(), lr=0.001, momentum=0.9)
+scheduler = StepLR(optimizer, step_size=7, gamma=0.1)
+
+# Device configuration
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+vgg16.to(device)
+
+# Train the model
+num_epochs = 10
+for epoch in range(num_epochs):
+    vgg16.train()
+    running_loss = 0.0
+    for i, data in enumerate(train_loader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = vgg16(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    scheduler.step()
+    print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}")
+
+    # Test the model
+    vgg16.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for data in test_loader:
+            images, labels = data
+            images, labels = images.to(device), labels.to(device)
+            outputs = vgg16(images)
+            _, predicted = torch.max(outputs.data, 1)
+
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    print(f'Accuracy of the network on the test images: {100 * correct / total} %')
+
+print('Finished Training')
+
+# Modify ResNet-152
+resnet152 = models.resnet152(pretrained=True)
+num_classes = len(dataset.classes)
+
+# Replace the last fully connected layer
+num_ftrs = resnet152.fc.in_features
+resnet152.fc = nn.Linear(num_ftrs, num_classes)
+
+# Define loss function and optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(resnet152.parameters(), lr=0.001, momentum=0.9)
+scheduler = StepLR(optimizer, step_size=7, gamma=0.1)
+
+# Device configuration
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+resnet152.to(device)
+
+# Train the model
+num_epochs = 10
+for epoch in range(num_epochs):
+    resnet152.train()
+    running_loss = 0.0
+    for i, data in enumerate(train_loader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = resnet152(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    scheduler.step()
+    print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}")
+
+    # Test the model
+    resnet152.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for data in test_loader:
+            images, labels = data
+            images, labels = images.to(device), labels.to(device)
+            outputs = resnet152(images)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    print(f'Accuracy of the network on the test images: {100 * correct / total} %')
+
+print('Finished Training')
+
+from PIL import Image
+import torch
+import torchvision.transforms as transforms
+from torchvision import models
+import matplotlib.pyplot as plt
+
+# Define your transformation pipeline
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # VGG16 uses 224x224 input size
+    transforms.ToTensor(),
+    # Normalization values for pretrained models are usually the means and stds of the ImageNet dataset.
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+])
+
+# Load the saved model
+vgg16 = models.vgg16(pretrained=False)  # Load VGG16 without pretrained weights initially
+num_classes = len(dataset.classes)  # Define the number of classes in your dataset
+vgg16.classifier[6] = torch.nn.Linear(vgg16.classifier[6].in_features, num_classes)
+
+# Load the trained model's weights
+vgg16.load_state_dict(torch.load('/content/vgg16_model.pth'))
+
+# Set the device to GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+vgg16.to(device)
+
+# Function to predict the class of a single image and show the image
+def predict_single_image(image_path, model, transform, device):
+    # Open the image file
+    image = Image.open(image_path)
+
+    # Convert to RGB if the image has fewer channels
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+
+    # Apply the transformations to the image
+    transformed_image = transform(image)
+
+    # Add a batch dimension (batch size 1) since PyTorch expects a batch
+    transformed_image = transformed_image.unsqueeze(0).to(device)
+
+    # Set the model to evaluation mode
+    model.eval()
+
+    # No need to track gradients for prediction
+    with torch.no_grad():
+        outputs = model(transformed_image)
+        _, predicted = torch.max(outputs, 1)
+
+    # Get the index of the predicted class
+    predicted_class_index = predicted.item()
+
+    # Display the image
+    plt.imshow(image)
+    plt.title(f'Predicted Class: {dataset.classes[predicted_class_index]}')
+    plt.axis('off')  # Hide axes for better display
+    plt.show()
+
+    return predicted_class_index
+
+# Example usage
+image_path = '/content/drive/MyDrive/dataset brain/glioma/Te-glTr_0005.jpg'  # Replace with your image path
+predicted_class_index = predict_single_image(image_path, vgg16, transform, device)
+predicted_class = dataset.classes[predicted_class_index]
+print(f'Predicted Class: {predicted_class}')
+
+from PIL import Image
+import torch
+import torchvision.transforms as transforms
+from torchvision import models
+import matplotlib.pyplot as plt
+
+# Define your transformation pipeline
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # VGG16 uses 224x224 input size
+    transforms.ToTensor(),
+    # Normalization values for pretrained models are usually the means and stds of the ImageNet dataset.
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+])
+
+# Load the saved model
+vgg16 = models.vgg16(pretrained=False)  # Load VGG16 without pretrained weights initially
+num_classes = len(dataset.classes)  # Define the number of classes in your dataset
+vgg16.classifier[6] = torch.nn.Linear(vgg16.classifier[6].in_features, num_classes)
+
+# Load the trained model's weights
+vgg16.load_state_dict(torch.load('/content/vgg16_model.pth'))
+
+# Set the device to GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+vgg16.to(device)
+
+# Function to predict the class of a single image and show the image
+def predict_single_image(image_path, model, transform, device):
+    # Open the image file
+    image = Image.open(image_path)
+
+    # Convert to RGB if the image has fewer channels
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+
+    # Apply the transformations to the image
+    transformed_image = transform(image)
+
+    # Add a batch dimension (batch size 1) since PyTorch expects a batch
+    transformed_image = transformed_image.unsqueeze(0).to(device)
+
+    # Set the model to evaluation mode
+    model.eval()
+
+    # No need to track gradients for prediction
+    with torch.no_grad():
+        outputs = model(transformed_image)
+        _, predicted = torch.max(outputs, 1)
+
+    # Get the index of the predicted class
+    predicted_class_index = predicted.item()
+
+    # Display the image
+    plt.imshow(image)
+    plt.title(f'Predicted Class: {dataset.classes[predicted_class_index]}')
+    plt.axis('off')  # Hide axes for better display
+    plt.show()
+
+    return predicted_class_index
+
+# Example usage
+image_path = '/content/drive/MyDrive/dataset brain/pituitary/Te-pi_0013.jpg'  # Replace with your image path
+predicted_class_index = predict_single_image(image_path, vgg16, transform, device)
+predicted_class = dataset.classes[predicted_class_index]
+print(f'Predicted Class: {predicted_class}')
+
+
